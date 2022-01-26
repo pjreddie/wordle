@@ -1,0 +1,12 @@
+*.o
+*.dSYM
+.fuse*
+libwordle*
+wordle
+
+# OS Generated #
+.DS_Store*
+ehthumbs.db
+Icon?
+Thumbs.db
+*.swp
