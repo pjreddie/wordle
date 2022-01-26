@@ -212,6 +212,7 @@ tree *make_tree(vector truths, vector guesses, int depth, int n, int hard)
                     append_vector(trees[i]->children, make_tree(splits[j], hard ? splits[j] : guesses, depth+1, n, hard));
                 }
             }
+            free_splits(splits);
         }
         
         float best = avg_depth_tree(trees[0]);
@@ -290,8 +291,10 @@ int main()
     //print_split(splits);
 
     best_splits(word_indexes, word_indexes);
-    tree *t =  make_tree(word_indexes, word_indexes, 0, 2, 1);
+    tree *t =  make_tree(word_indexes, word_indexes, 0, 10, 0);
     print_tree(t, "", -1);
     printf("%f\n", avg_depth_tree(t));
     free_tree(t);
+    free_vector(word_indexes);
+    free_vector(all_indexes);
 }
