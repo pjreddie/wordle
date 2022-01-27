@@ -227,6 +227,9 @@ void free_tree_shallow(tree *t)
     if (t->children.data){
         free_vector(t->children);
     }
+    if(t->leaves.data){
+        free_vector(t->leaves);
+    }
     free(t);
 }
 
