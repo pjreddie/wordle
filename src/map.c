@@ -17,7 +17,7 @@ size_t hash_vector(const vector v)
     return hash;
 }
 
-inline int compare_vector(const vector v1, const vector v2)
+static inline int compare_vector(const vector v1, const vector v2)
 {
     if(*v1.size != *v2.size) return 0;
     int i;

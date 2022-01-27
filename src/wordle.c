@@ -33,7 +33,7 @@ void read_data()
     fclose(fp);
 }
 
-inline int ipow(double a, double b)
+static inline int ipow(double a, double b)
 {
     return ((int) (pow(a, b) + 1e-8));
 }
@@ -79,6 +79,19 @@ void fill_scores()
     }
 }
 
+void fill_scores_partial(vector v)
+{
+    int i, j;
+    for(i = 0; i < *v.size; ++i){
+        for(j = 0; j < *v.size; ++j){
+            int i1, j1;
+            i1 = v.data[0][i];
+            j1 = v.data[0][j];
+            SCORES[i1][j1] = score_guess(ALL[i1], ALL[j1]);
+        }
+    }
+}
+
 void free_splits(vector *splits)
 {
     size_t i;
@@ -96,6 +109,7 @@ vector *split(vector truths, size_t guess)
     for(i = 0; i < *truths.size; ++i){
         size_t truth = (size_t) get_vector(truths, i);
         uint8_t score = SCORES[guess][truth];
+        //uint8_t score = score_guess(WORDS[guess], WORDS[truth]);
         if (!splits[score].data) splits[score] = make_vector(0);
         append_vector(splits[score], (void*) truth);
     }
@@ -185,8 +199,12 @@ score_pair *best_splits(vector truths, vector guesses)
 }
 
 typedef struct{
+    int leaf;
     size_t index;
     vector children;
+    vector leaves;
+    int depth_sum;
+    int count_sum;
 } tree;
 
 void free_tree(tree *t)
@@ -197,6 +215,9 @@ void free_tree(tree *t)
             free_tree((tree *)t->children.data[0][i]);
         }
         free_vector(t->children);
+    }
+    if (t->leaves.data){
+        free_vector(t->leaves);
     }
     free(t);
 }
@@ -214,6 +235,7 @@ typedef struct {
     int depths;
 } depth_counts;
 
+/*
 depth_counts depth_counts_tree(tree *t, int depth, size_t prev)
 {
     depth_counts c = {0};
@@ -237,59 +259,71 @@ float avg_depth_tree(tree *t)
     depth_counts c = depth_counts_tree(t, 0, -1);
     return 1.0 * c.depths / c.n;
 }
+*/
 
 tree *make_tree(vector truths, vector guesses, int depth, int n, int hard, map *memo)
 {
-    if(*truths.size == 1){
-        tree *t = calloc(1, sizeof(tree));
-        t->index = (size_t) truths.data[0][0];
-        return t;
-    }else{
-        tree *cache = get_map(memo, truths, 0);
-        if (cache != 0){
-            return cache;
-        }
-        if (*guesses.size < n) n = *guesses.size;
-        score_pair *scores = best_splits(truths, guesses);
-        if (STOPEARLY && scores[0].score < 1) n = 1;
+    tree *cache = get_map(memo, truths, 0);
+    if (cache != 0){
+        return cache;
+    }
+    if (*guesses.size < n) n = *guesses.size;
+    score_pair *scores = best_splits(truths, guesses);
+    if (STOPEARLY && scores[0].score < 1) n = 1;
 
-        tree **trees = calloc(n, sizeof(tree *));
-        int i, j;
-        for(i = 0; i < n; ++i){
-            size_t guess = scores[i].index;
-            vector *splits = split(truths, guess);
+    tree **trees = calloc(n, sizeof(tree *));
+    int i, j;
+    for(i = 0; i < n; ++i){
+        size_t guess = scores[i].index;
+        vector *splits = split(truths, guess);
 
-            trees[i] = calloc(1, sizeof(tree));
-            trees[i]->children = make_vector(0);
-            trees[i]->index = guess;
+        trees[i] = calloc(1, sizeof(tree));
+        trees[i]->children = make_vector(0);
+        trees[i]->leaves = make_vector(0);
+        trees[i]->index = guess;
 
-            for (j = 0; j < ipow(3, WSIZE); ++j){
-                if(splits[j].data){
-                    append_vector(trees[i]->children, make_tree(splits[j], hard ? splits[j] : guesses, depth+1, n, hard, memo));
+        for (j = 0; j < ipow(3, WSIZE); ++j){
+            if(splits[j].data){
+                if (*splits[j].size == 1){
+                    size_t index = (size_t) splits[j].data[0][0];
+                    if(index == guess){
+                        trees[i]->leaf = 1;
+                        trees[i]->count_sum += 1;
+                        trees[i]->depth_sum += 1;
+                    } else {
+                        append_vector(trees[i]->leaves, (void *)index);
+                        trees[i]->count_sum += 1;
+                        trees[i]->depth_sum += 2;
+                    }
+                } else {
+                    tree *child = make_tree(splits[j], hard ? splits[j] : guesses, depth+1, n, hard, memo);
+                    append_vector(trees[i]->children, child);
+                    trees[i]->count_sum += child->count_sum;
+                    trees[i]->depth_sum += child->count_sum + child->depth_sum;
                 }
             }
-            free_splits(splits);
         }
-
-        float best = avg_depth_tree(trees[0]);
-        for(i = 1; i < n; ++i){
-            float avg = avg_depth_tree(trees[i]);
-            if(avg < best){
-                best = avg;
-                tree *swap = trees[0];
-                trees[0] = trees[i];
-                trees[i] = swap;
-            }
-        }
-        tree *t = trees[0];
-        for(i = 1; i < n; ++i){
-            free_tree_shallow(trees[i]);
-        }
-        set_map(memo, truths, t);
-        free(trees);
-        free(scores);
-        return t;
+        free_splits(splits);
     }
+
+    float best = 1.0 * trees[0]->depth_sum / trees[0]->count_sum;
+    for(i = 1; i < n; ++i){
+        float avg = 1.0 * trees[0]->depth_sum / trees[0]->count_sum;
+        if(avg < best){
+            best = avg;
+            tree *swap = trees[0];
+            trees[0] = trees[i];
+            trees[i] = swap;
+        }
+    }
+    tree *t = trees[0];
+    for(i = 1; i < n; ++i){
+        free_tree_shallow(trees[i]);
+    }
+    set_map(memo, truths, t);
+    free(trees);
+    free(scores);
+    return t;
 }
 
 void print_split(vector *splits)
@@ -305,21 +339,43 @@ void print_split(vector *splits)
 }
 
 
-void print_tree(tree *t, char *buff, size_t prev)
+void print_tree(tree *t, char *buff)
 {
     char *w = decode(t->index);   
-    if (!t->children.data){
-        if(prev == t->index){
-            printf("%s\n", buff);       
-        }else{
-            printf("%s%s%s\n", buff, strlen(buff)?",":"", w);
-        }
-    } else {
-        int i;
+    int i;
+    char b2[1024] = {0};
+    sprintf(b2, "%s%s%s", buff, strlen(buff)?",":"", w);
+
+    if (t->children.data){
         for(i = 0; i < t->children.size[0]; ++i){
-            char b2[1024] = {0};
-            sprintf(b2, "%s%s%s", buff, strlen(buff)?",":"", w);
-            print_tree((tree *)t->children.data[0][i], b2, t->index);
+            print_tree((tree *)t->children.data[0][i], b2);
+        }
+    }
+
+    if (t->leaves.data){
+        for(i = 0; i < t->leaves.size[0]; ++i){
+            char *l = decode((size_t) t->leaves.data[0][i]);
+            printf("%s,%s\n", b2, l);
+        }
+    }
+
+    if(t->leaf){
+        printf("%s\n", b2);
+    }
+}
+
+void free_memo(map *m)
+{
+    int i;
+    for(i = 0; i < m->size; ++i){
+        list *l = m->data[i];
+        if(l){
+            node *n = l->front;
+            while(n){
+                kvp *pair = (kvp *) n->val;
+                free_tree_shallow((tree *) pair->val);
+                n = n->next;
+            }
         }
     }
 }
@@ -327,7 +383,7 @@ void print_tree(tree *t, char *buff, size_t prev)
 int main()
 {
     read_data();
-    fill_scores();
+    //fill_scores();
     vector word_indexes = make_vector(NWORDS);
     size_t i, j;
     for(i = 0; i < NWORDS; ++i){
@@ -337,6 +393,7 @@ int main()
             }
         }
     }
+    fill_scores_partial(word_indexes);
     vector all_indexes = make_vector(NALL);
     for(j = 0; j < NALL; ++j){
         append_vector(all_indexes, (void*) j);
@@ -362,10 +419,11 @@ int main()
     printf("%d\n", SCORES[0][0]);
 
     map *memo = make_map();
-    tree *t =  make_tree(word_indexes, all_indexes, 0, 8, 0, memo);
-    print_tree(t, "", -1);
-    printf("%f\n", avg_depth_tree(t));
-    free_tree(t);
+    tree *t =  make_tree(word_indexes, word_indexes, 0, 2, 1, memo);
+    print_tree(t, "");
+    printf("%f\n", 1.0*t->depth_sum / t->count_sum);
+    free_memo(memo);
     free_vector(word_indexes);
     free_vector(all_indexes);
+    free_map(memo);
 }
