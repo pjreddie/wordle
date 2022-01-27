@@ -311,7 +311,7 @@ tree *make_tree(vector truths, vector guesses, int depth, int n, int hard, map *
 
     float best = 1.0 * trees[0]->depth_sum / trees[0]->count_sum;
     for(i = 1; i < n; ++i){
-        float avg = 1.0 * trees[0]->depth_sum / trees[0]->count_sum;
+        float avg = 1.0 * trees[i]->depth_sum / trees[i]->count_sum;
         if(avg < best){
             best = avg;
             tree *swap = trees[0];
@@ -386,7 +386,7 @@ void free_memo(map *m)
 int main()
 {
     read_data();
-    //fill_scores();
+    fill_scores();
     vector word_indexes = make_vector(NWORDS);
     size_t i, j;
     for(i = 0; i < NWORDS; ++i){
@@ -396,7 +396,7 @@ int main()
             }
         }
     }
-    fill_scores_partial(word_indexes);
+    //fill_scores_partial(word_indexes);
     vector all_indexes = make_vector(NALL);
     for(j = 0; j < NALL; ++j){
         append_vector(all_indexes, (void*) j);
@@ -422,9 +422,9 @@ int main()
     printf("%d\n", SCORES[0][0]);
 
     map *memo = make_map();
-    tree *t =  make_tree(word_indexes, word_indexes, 0, 2, 1, memo);
+    tree *t =  make_tree(word_indexes, all_indexes, 0, 8, 0, memo);
     print_tree(t, "");
-    printf("%f\n", 1.0*t->depth_sum / t->count_sum);
+    printf("%d %d %f\n", t->depth_sum, t->count_sum, 1.0*t->depth_sum / t->count_sum);
     free_memo(memo);
     free_vector(word_indexes);
     free_vector(all_indexes);
