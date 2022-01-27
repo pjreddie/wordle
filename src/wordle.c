@@ -8,6 +8,7 @@
 #define WSIZE 5
 #define NWORDS 2315
 #define NALL 12972
+#define STOPEARLY 1
 
 char WORDS[NWORDS][WSIZE + 1];
 char ALL[NALL][WSIZE + 1];
@@ -151,6 +152,20 @@ score_pair *best_splits(vector truths, vector guesses)
 {
     score_pair *scores = calloc(*guesses.size, sizeof(score_pair));
     int i = 0;
+    int cutoff = *guesses.size;
+    if(STOPEARLY && *truths.size < 13){
+        for(i = 0; i < *truths.size; ++i){
+            size_t guess = (size_t) truths.data[0][i];
+            vector *splits = split(truths, guess);
+            float avg = avg_split_size(splits);
+            free_splits(splits);
+            if (avg < 1) {
+                scores[0].score = avg;
+                scores[0].index = guess;
+                return scores;
+            }
+        }
+    }
     for(i = 0; i < *guesses.size; ++i){
         size_t guess = (size_t) guesses.data[0][i];
         vector *splits = split(truths, guess);
@@ -159,8 +174,12 @@ score_pair *best_splits(vector truths, vector guesses)
 
         scores[i].score = avg;
         scores[i].index = guess;
+        if (STOPEARLY && avg < 1){
+            cutoff = i + 1;
+            break;
+        }
     }
-    qsort(scores, *guesses.size, sizeof(score_pair), score_pair_cmp);
+    qsort(scores, cutoff, sizeof(score_pair), score_pair_cmp);
     return scores;
 }
 
@@ -218,8 +237,10 @@ tree *make_tree(vector truths, vector guesses, int depth, int n, int hard)
         return t;
     }else{
         if (*guesses.size < n) n = *guesses.size;
-        tree **trees = calloc(n, sizeof(tree *));
         score_pair *scores = best_splits(truths, guesses);
+        if (STOPEARLY && scores[0].score < 1) n = 1;
+
+        tree **trees = calloc(n, sizeof(tree *));
         int i, j;
         for(i = 0; i < n; ++i){
             size_t guess = scores[i].index;
@@ -326,7 +347,7 @@ int main()
 
     printf("%d\n", SCORES[0][0]);
 
-    tree *t =  make_tree(word_indexes, all_indexes, 0, 10, 0);
+    tree *t =  make_tree(word_indexes, all_indexes, 0, 8, 0);
     print_tree(t, "", -1);
     printf("%f\n", avg_depth_tree(t));
     free_tree(t);
