@@ -31,7 +31,12 @@ void read_data()
     fclose(fp);
 }
 
-int score_guess(char *truth_, char *guess_)
+inline int ipow(double a, double b)
+{
+    return ((int) (pow(a, b) + 1e-8));
+}
+
+int score_guess(char *guess_, char *truth_)
 {
     char truth[WSIZE];
     char guess[WSIZE];
@@ -44,7 +49,7 @@ int score_guess(char *truth_, char *guess_)
         if (truth[i] == c) {
             truth[i] = 0;
             guess[i] = 0;
-            score += pow(3, i)*2;
+            score += ipow(3, i)*2;
         }
     }
     for (i = 0; i < WSIZE; ++i) {
@@ -53,7 +58,7 @@ int score_guess(char *truth_, char *guess_)
         for (j = 0; j < WSIZE; ++j) {
             if (c == truth[j]) {
                 truth[j] = 0;
-                score += pow(3, i);
+                score += ipow(3, i);
                 break;
             }
         }
@@ -75,7 +80,7 @@ void fill_scores()
 void free_splits(vector *splits)
 {
     size_t i;
-    for(i = 0; i < pow(3, WSIZE); ++i){
+    for(i = 0; i < ipow(3, WSIZE); ++i){
         if(splits[i].data) free_vector(splits[i]);
     }
     free(splits);
@@ -83,12 +88,12 @@ void free_splits(vector *splits)
 
 vector *split(vector truths, size_t guess)
 {
-    vector *splits = calloc(pow(3, WSIZE), sizeof(vector));
+    vector *splits = calloc(ipow(3, WSIZE), sizeof(vector));
 
     size_t i;
     for(i = 0; i < *truths.size; ++i){
         size_t truth = (size_t) get_vector(truths, i);
-        int score = SCORES[truth][guess];
+        int score = SCORES[guess][truth];
         if (!splits[score].data) splits[score] = make_vector(0);
         append_vector(splits[score], (void*) truth);
     }
@@ -102,13 +107,29 @@ char *decode(size_t i)
 
 float avg_split_size(vector *splits)
 {
-    float sum = 0;
-    int n = 0;
+    double sum = 0;
+    size_t n = 0;
     size_t i;
-    for(i = 0; i < pow(3, WSIZE); ++i){
+    size_t lim = ipow(3, WSIZE);
+    for(i = 0; i < lim; ++i){
         if (!splits[i].data) continue;
-        ++n;
-        sum += *splits[i].size;
+        size_t ssize = *splits[i].size;
+        if (0){
+            if (i == lim-1){
+                n += ssize;
+            } else {
+                n += ssize;
+                sum += ssize*ssize;
+            }
+        } else {
+            if (i == lim-1){
+                //printf("hey\n");
+                n += 1;
+            } else {
+                n += 1;
+                sum += ssize;
+            }
+        }
     }
     return sum / n;
 }
@@ -172,6 +193,7 @@ depth_counts depth_counts_tree(tree *t, int depth, size_t prev)
         c.n = 1;
         c.depths = depth+1;
         if(prev == t->index) c.depths = depth;
+        //if(c.depths > 6) c.depths = 10000;
     } else {
         int i;
         for(i = 0; i < t->children.size[0]; ++i){
@@ -206,15 +228,15 @@ tree *make_tree(vector truths, vector guesses, int depth, int n, int hard)
             trees[i] = calloc(1, sizeof(tree));
             trees[i]->children = make_vector(0);
             trees[i]->index = guess;
-            
-            for (j = 0; j < pow(3, WSIZE); ++j){
+
+            for (j = 0; j < ipow(3, WSIZE); ++j){
                 if(splits[j].data){
                     append_vector(trees[i]->children, make_tree(splits[j], hard ? splits[j] : guesses, depth+1, n, hard));
                 }
             }
             free_splits(splits);
         }
-        
+
         float best = avg_depth_tree(trees[0]);
         for(i = 1; i < n; ++i){
             float avg = avg_depth_tree(trees[i]);
@@ -238,7 +260,7 @@ tree *make_tree(vector truths, vector guesses, int depth, int n, int hard)
 void print_split(vector *splits)
 {
     size_t i, j;
-    for(i = 0; i < pow(3, WSIZE); ++i){
+    for(i = 0; i < ipow(3, WSIZE); ++i){
         if (!splits[i].data) continue;
         for(j = 0; j < *splits[i].size; ++j){
             printf("%s,", decode((size_t) splits[i].data[0][j]));
@@ -287,11 +309,24 @@ int main()
 
     printf("%ld %ld\n", *word_indexes.size, *word_indexes.capacity);
 
+    if(0){
+        printf("%d\n", score_guess("words", "words"));
+        return 0;
+    }
     //vector *splits = split(word_indexes, 6180);
     //print_split(splits);
 
-    best_splits(word_indexes, word_indexes);
-    tree *t =  make_tree(word_indexes, word_indexes, 0, 10, 0);
+    if (0){
+        score_pair *scores = best_splits(word_indexes, all_indexes);
+        for(i = 0; i < 40; ++i){
+            printf("%f %s\n", scores[i].score, decode(scores[i].index));
+        }
+        return 0;
+    }
+
+    printf("%d\n", SCORES[0][0]);
+
+    tree *t =  make_tree(word_indexes, all_indexes, 0, 10, 0);
     print_tree(t, "", -1);
     printf("%f\n", avg_depth_tree(t));
     free_tree(t);
