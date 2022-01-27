@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <math.h>
 #include "vector.h"
+#include "map.h"
 
 #define WSIZE 5
 #define NWORDS 2315
@@ -12,7 +13,7 @@
 
 char WORDS[NWORDS][WSIZE + 1];
 char ALL[NALL][WSIZE + 1];
-int SCORES[NALL][NALL];
+uint8_t SCORES[NALL][NALL];
 
 void read_data()
 {
@@ -37,7 +38,7 @@ inline int ipow(double a, double b)
     return ((int) (pow(a, b) + 1e-8));
 }
 
-int score_guess(char *guess_, char *truth_)
+uint8_t score_guess(char *guess_, char *truth_)
 {
     char truth[WSIZE];
     char guess[WSIZE];
@@ -65,7 +66,7 @@ int score_guess(char *guess_, char *truth_)
         }
     }
 
-    return score;
+    return (uint8_t) score;
 }
 
 void fill_scores()
@@ -94,7 +95,7 @@ vector *split(vector truths, size_t guess)
     size_t i;
     for(i = 0; i < *truths.size; ++i){
         size_t truth = (size_t) get_vector(truths, i);
-        int score = SCORES[guess][truth];
+        uint8_t score = SCORES[guess][truth];
         if (!splits[score].data) splits[score] = make_vector(0);
         append_vector(splits[score], (void*) truth);
     }
@@ -190,6 +191,7 @@ typedef struct{
 
 void free_tree(tree *t)
 {
+    /*
     if (t->children.data){
         int i;
         for(i = 0; i < t->children.size[0]; ++i){
@@ -198,6 +200,7 @@ void free_tree(tree *t)
         free_vector(t->children);
     }
     free(t);
+    */
 }
 
 typedef struct {
@@ -229,13 +232,17 @@ float avg_depth_tree(tree *t)
     return 1.0 * c.depths / c.n;
 }
 
-tree *make_tree(vector truths, vector guesses, int depth, int n, int hard)
+tree *make_tree(vector truths, vector guesses, int depth, int n, int hard, map *memo)
 {
     if(*truths.size == 1){
         tree *t = calloc(1, sizeof(tree));
         t->index = (size_t) truths.data[0][0];
         return t;
     }else{
+        tree *cache = get_map(memo, truths, 0);
+        if (cache != 0){
+            return cache;
+        }
         if (*guesses.size < n) n = *guesses.size;
         score_pair *scores = best_splits(truths, guesses);
         if (STOPEARLY && scores[0].score < 1) n = 1;
@@ -252,7 +259,7 @@ tree *make_tree(vector truths, vector guesses, int depth, int n, int hard)
 
             for (j = 0; j < ipow(3, WSIZE); ++j){
                 if(splits[j].data){
-                    append_vector(trees[i]->children, make_tree(splits[j], hard ? splits[j] : guesses, depth+1, n, hard));
+                    append_vector(trees[i]->children, make_tree(splits[j], hard ? splits[j] : guesses, depth+1, n, hard, memo));
                 }
             }
             free_splits(splits);
@@ -272,6 +279,7 @@ tree *make_tree(vector truths, vector guesses, int depth, int n, int hard)
         for(i = 1; i < n; ++i){
             free_tree(trees[i]);
         }
+        set_map(memo, truths, t);
         free(trees);
         free(scores);
         return t;
@@ -347,7 +355,8 @@ int main()
 
     printf("%d\n", SCORES[0][0]);
 
-    tree *t =  make_tree(word_indexes, all_indexes, 0, 8, 0);
+    map *memo = make_map();
+    tree *t =  make_tree(word_indexes, all_indexes, 0, 8, 0, memo);
     print_tree(t, "", -1);
     printf("%f\n", avg_depth_tree(t));
     free_tree(t);

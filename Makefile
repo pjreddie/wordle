@@ -2,7 +2,7 @@ OPENCV=0
 OPENMP=0
 DEBUG=0
 
-OBJ=wordle.o vector.o
+OBJ=wordle.o vector.o list.o map.o
 
 VPATH=./src/:./
 EXEC=wordle

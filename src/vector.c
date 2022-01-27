@@ -24,6 +24,17 @@ vector make_vector(size_t capacity)
     return v;
 }
 
+vector copy_vector(vector v)
+{
+    vector c = make_vector(*v.size);
+    *c.size = *v.size;
+    int i;
+    for(i = 0; i < *v.size; ++i){
+        c.data[0][i] = v.data[0][i];
+    }
+    return c;
+}
+
 void free_vector(vector v)
 {
     free(v.data[0]);

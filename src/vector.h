@@ -11,6 +11,7 @@ typedef struct {
 
 
 vector make_vector(size_t capacity);
+vector copy_vector(vector v);
 void free_vector(vector v);
 void *get_vector(const vector v, const size_t i);
 void set_vector(vector v, const size_t i, void * p);
