@@ -191,7 +191,6 @@ typedef struct{
 
 void free_tree(tree *t)
 {
-    /*
     if (t->children.data){
         int i;
         for(i = 0; i < t->children.size[0]; ++i){
@@ -200,7 +199,14 @@ void free_tree(tree *t)
         free_vector(t->children);
     }
     free(t);
-    */
+}
+
+void free_tree_shallow(tree *t)
+{
+    if (t->children.data){
+        free_vector(t->children);
+    }
+    free(t);
 }
 
 typedef struct {
@@ -277,7 +283,7 @@ tree *make_tree(vector truths, vector guesses, int depth, int n, int hard, map *
         }
         tree *t = trees[0];
         for(i = 1; i < n; ++i){
-            free_tree(trees[i]);
+            free_tree_shallow(trees[i]);
         }
         set_map(memo, truths, t);
         free(trees);
