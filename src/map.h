@@ -8,7 +8,7 @@
 
 
 typedef struct kvp{
-    vector key;
+    vector *key;
     void *val;
 } kvp;
 
@@ -19,9 +19,9 @@ typedef struct map{
 } map;
 
 map *make_map();
-void *set_map(map *d, const vector key, void *val);
-void *get_map(map *d, const vector key, void *def);
-void *del_map(map *d, const vector key); 
+void *set_map(map *d, const vector *key, void *val);
+void *get_map(map *d, const vector *key, void *def);
+void *del_map(map *d, const vector *key); 
 void free_map(map *d);
 void print_map(map *d);
 void free_map(map *d);

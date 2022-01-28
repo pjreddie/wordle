@@ -3,26 +3,26 @@
 
 //djb2 hash function
 //taken from http://www.cse.yorku.ca/~oz/hash.html
-size_t hash_vector(const vector v)
+size_t hash_vector(const vector *v)
 {
     size_t hash = 5381;
     size_t c;
 
     int i = 0;
-    for(i = 0; i < *v.size; ++i){
-        c = (size_t) v.data[0][i];
+    for(i = 0; i < v->size; ++i){
+        c = (size_t) v->data[i];
         hash = ((hash << 5) + hash) ^ c; /* hash * 33 ^ c */
     }
 
     return hash;
 }
 
-static inline int compare_vector(const vector v1, const vector v2)
+static inline int compare_vector(const vector *v1, const vector *v2)
 {
-    if(*v1.size != *v2.size) return 0;
+    if(v1->size != v2->size) return 0;
     int i;
-    for(i = 0; i < *v1.size; ++i){
-        if (v1.data[0][i] != v2.data[0][i]) return 0;
+    for(i = 0; i < v1->size; ++i){
+        if (v1->data[i] != v2->data[i]) return 0;
     }
     return 1;
 }
@@ -36,7 +36,7 @@ map *make_map()
     return d;
 }
 
-kvp *kvp_list_find(list *l, const vector key)
+kvp *kvp_list_find(list *l, const vector *key)
 {
     if(!l) return 0;
     node *n = l->front;
@@ -73,7 +73,7 @@ void expand_map(map *d)
     free(old_data);
 }
 
-void *set_map(map *d, const vector key, void *val)
+void *set_map(map *d, const vector *key, void *val)
 {
     void *old = 0;
     if((double)d->load / d->size > .7) expand_map(d);
@@ -94,7 +94,7 @@ void *set_map(map *d, const vector key, void *val)
     return old;
 }
 
-void *get_map(map *d, const vector key, void *def)
+void *get_map(map *d, const vector *key, void *def)
 {
     size_t h = hash_vector(key) % d->size;
     list *l = d->data[h];

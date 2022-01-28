@@ -12,75 +12,71 @@ void error(const char *s, ...)
     exit(1);
 }
 
-vector make_vector(size_t capacity)
+vector *make_vector(size_t capacity)
 {
     if (!capacity) capacity = 16;
-    vector v = {0};
-    v.data = calloc(1, sizeof(void **));
-    v.data[0] = calloc(capacity, sizeof (void *));
-    v.capacity = calloc(1, sizeof(size_t));
-    *v.capacity = capacity;
-    v.size = calloc(1, sizeof(size_t));
+    vector *v = calloc(1, sizeof(vector));
+    v->data = calloc(capacity, sizeof (void *));
+    v->capacity = capacity;
+    v->size = 0;
     return v;
 }
 
-vector copy_vector(vector v)
+vector *copy_vector(const vector *v)
 {
-    vector c = make_vector(*v.size + 1);
-    *c.size = *v.size;
+    vector *c = make_vector(v->size + 1);
+    c->size = v->size;
     int i;
-    for(i = 0; i < *v.size; ++i){
-        c.data[0][i] = v.data[0][i];
+    for(i = 0; i < v->size; ++i){
+        c->data[i] = v->data[i];
     }
     return c;
 }
 
-vector concat_vectors(vector a, vector b)
+vector *concat_vectors(vector *a, vector *b)
 {
     int i;
-    vector c = make_vector(*a.size + *b.size + 1);
-    *c.size = *a.size + *b.size;
-    for(i = 0; i < *a.size; ++i){
-        c.data[0][i] = a.data[0][i];
+    vector *c = make_vector(a->size + b->size + 1);
+    c->size = a->size + b->size;
+    for(i = 0; i < a->size; ++i){
+        c->data[i] = a->data[i];
     }
-    for(i = 0; i < *b.size; ++i){
-        c.data[0][*a.size + i] = b.data[0][i];
+    for(i = 0; i < b->size; ++i){
+        c->data[a->size + i] = b->data[i];
     }
     return c;
 }
 
-void free_vector(vector v)
+void free_vector(vector *v)
 {
-    free(v.data[0]);
-    free(v.data);
-    free(v.capacity);
-    free(v.size);
+    free(v->data);
+    free(v);
 }
 
-void *get_vector(const vector v, const size_t i)
+void *get_vector(const vector *v, const size_t i)
 {
-    if ( i < 0 || *v.size <= i ) {
-        error("Out of bounds vector get: %d, size %d", i, *v.size);
+    if ( i < 0 || v->size <= i ) {
+        error("Out of bounds vector get: %d, size %d", i, v->size);
     }
-    return v.data[0][i];
+    return v->data[i];
 }
 
-void set_vector(vector v, const size_t i, void *p)
+void set_vector(vector *v, const size_t i, void *p)
 {
-    if ( i < 0 || *v.size <= i ) {
-        error("Out of bounds vector get: %d, size %d", i, *v.size);
+    if ( i < 0 || v->size <= i ) {
+        error("Out of bounds vector get: %d, size %d", i, v->size);
     }
 
-    v.data[0][i] = p;
+    v->data[i] = p;
 }
 
-void append_vector(vector v,  void *p)
+void append_vector(vector *v,  void *p)
 {
-    if ( *v.size == *v.capacity ){
-        *v.capacity *= 2;
-        v.data[0] = realloc(v.data[0], *v.capacity * sizeof(void *));
+    if ( v->size == v->capacity ){
+        v->capacity *= 2;
+        v->data = realloc(v->data, v->capacity * sizeof(void *));
     }
-    v.data[0][*v.size] = p;
-    ++*v.size;
+    v->data[v->size] = p;
+    ++v->size;
 }
 

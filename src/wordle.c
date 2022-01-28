@@ -79,39 +79,39 @@ void fill_scores()
     }
 }
 
-void fill_scores_partial(vector v)
+void fill_scores_partial(vector *v)
 {
     int i, j;
-    for(i = 0; i < *v.size; ++i){
-        for(j = 0; j < *v.size; ++j){
-            int i1, j1;
-            i1 = v.data[0][i];
-            j1 = v.data[0][j];
+    for(i = 0; i < v->size; ++i){
+        for(j = 0; j < v->size; ++j){
+            size_t i1, j1;
+            i1 = (size_t) v->data[i];
+            j1 = (size_t) v->data[j];
             SCORES[i1][j1] = score_guess(ALL[i1], ALL[j1]);
         }
     }
 }
 
-void free_splits(vector *splits)
+void free_splits(vector **splits)
 {
     if(!splits) return;
     size_t i;
     for(i = 0; i < ipow(3, WSIZE); ++i){
-        if(splits[i].data) free_vector(splits[i]);
+        if(splits[i]) free_vector(splits[i]);
     }
     free(splits);
 }
 
-vector *split(vector truths, size_t guess)
+vector **split(vector *truths, size_t guess)
 {
-    vector *splits = calloc(ipow(3, WSIZE), sizeof(vector));
+    vector **splits = calloc(ipow(3, WSIZE), sizeof(vector *));
 
     size_t i;
-    for(i = 0; i < *truths.size; ++i){
+    for(i = 0; i < truths->size; ++i){
         size_t truth = (size_t) get_vector(truths, i);
         uint8_t score = SCORES[guess][truth];
         //uint8_t score = score_guess(WORDS[guess], WORDS[truth]);
-        if (!splits[score].data) splits[score] = make_vector(0);
+        if (!splits[score]) splits[score] = make_vector(0);
         append_vector(splits[score], (void*) truth);
     }
     return splits;
@@ -122,14 +122,14 @@ char *decode(size_t i)
     return ALL[i];
 }
 
-float avg_split_size(vector truths, size_t guess)
+float avg_split_size(vector *truths, size_t guess)
 {
     int *counts = calloc(ipow(3, WSIZE), sizeof(int));
     int i;
     int sum = 0;
     int total = 0;
-    for(i = 0; i < *truths.size; ++i){
-        size_t truth = (size_t) truths.data[0][i];
+    for(i = 0; i < truths->size; ++i){
+        size_t truth = (size_t) truths->data[i];
         ++counts[SCORES[guess][truth]];
     }
     for(i = 0; i < ipow(3, WSIZE); ++i){
@@ -142,37 +142,6 @@ float avg_split_size(vector truths, size_t guess)
     free(counts);
     return 1.0 * sum / total;
 }
-
-/*
-float avg_split_size(vector *splits)
-{
-    double sum = 0;
-    size_t n = 0;
-    size_t i;
-    size_t lim = ipow(3, WSIZE);
-    for(i = 0; i < lim; ++i){
-        if (!splits[i].data) continue;
-        size_t ssize = *splits[i].size;
-        if (0){
-            if (i == lim-1){
-                n += ssize;
-            } else {
-                n += ssize;
-                sum += ssize*ssize;
-            }
-        } else {
-            if (i == lim-1){
-                //printf("hey\n");
-                n += 1;
-            } else {
-                n += 1;
-                sum += ssize;
-            }
-        }
-    }
-    return sum / n;
-}
-*/
 
 
 typedef struct{
@@ -187,14 +156,14 @@ int score_pair_cmp(const void *a, const void *b)
     return (fa > fb) - (fa < fb);
 }
 
-score_pair *best_splits(vector truths, vector guesses)
+score_pair *best_splits(vector *truths, vector *guesses)
 {
-    score_pair *scores = calloc(*guesses.size, sizeof(score_pair));
+    score_pair *scores = calloc(guesses->size, sizeof(score_pair));
     int i = 0;
-    int cutoff = *guesses.size;
-    if(STOPEARLY && *truths.size < 13){
-        for(i = 0; i < *truths.size; ++i){
-            size_t guess = (size_t) truths.data[0][i];
+    int cutoff = guesses->size;
+    if(STOPEARLY && truths->size < 13){
+        for(i = 0; i < truths->size; ++i){
+            size_t guess = (size_t) truths->data[i];
             float avg = avg_split_size(truths, guess);
             if (avg < 1) {
                 scores[0].score = avg;
@@ -203,8 +172,8 @@ score_pair *best_splits(vector truths, vector guesses)
             }
         }
     }
-    for(i = 0; i < *guesses.size; ++i){
-        size_t guess = (size_t) guesses.data[0][i];
+    for(i = 0; i < guesses->size; ++i){
+        size_t guess = (size_t) guesses->data[i];
         float avg = avg_split_size(truths, guess);
 
         scores[i].score = avg;
@@ -221,8 +190,8 @@ score_pair *best_splits(vector truths, vector guesses)
 typedef struct{
     int leaf;
     size_t index;
-    vector children;
-    vector leaves;
+    vector *children;
+    vector *leaves;
     int depth_sum;
     int count_sum;
     int max_depth;
@@ -230,14 +199,14 @@ typedef struct{
 
 void free_tree(tree *t)
 {
-    if (t->children.data){
+    if (t->children){
         int i;
-        for(i = 0; i < t->children.size[0]; ++i){
-            free_tree((tree *)t->children.data[0][i]);
+        for(i = 0; i < t->children->size; ++i){
+            free_tree((tree *)t->children->data[i]);
         }
         free_vector(t->children);
     }
-    if (t->leaves.data){
+    if (t->leaves){
         free_vector(t->leaves);
     }
     free(t);
@@ -253,10 +222,10 @@ size_t index_of(char *s)
 
 void free_tree_shallow(tree *t)
 {
-    if (t->children.data){
+    if (t->children){
         free_vector(t->children);
     }
-    if(t->leaves.data){
+    if(t->leaves){
         free_vector(t->leaves);
     }
     free(t);
@@ -267,10 +236,10 @@ typedef struct {
     int depths;
 } depth_counts;
 
-tree *make_tree(vector truths, vector guesses, int depth, int n, int hard, map *memo, int depth_cutoff, char *start)
+tree *make_tree(vector *truths, vector *guesses, int depth, int n, int hard, map *memo, int depth_cutoff, char *start)
 {
     int n_orig = n;
-    vector key;
+    vector *key = 0;
     if (hard){
         key = concat_vectors(truths, guesses);
     } else {
@@ -287,7 +256,7 @@ tree *make_tree(vector truths, vector guesses, int depth, int n, int hard, map *
                 free_vector(key);
                 return cache2;
             } else {
-                --key.size[0];
+                --key->size;
             }
         }else{
             free_vector(key);
@@ -295,7 +264,7 @@ tree *make_tree(vector truths, vector guesses, int depth, int n, int hard, map *
         }
     }
 
-    if (*guesses.size < n) n = *guesses.size;
+    if (guesses->size < n) n = guesses->size;
     score_pair *scores = best_splits(truths, guesses);
     if (STOPEARLY && scores[0].score < 1) n = 1;
 
@@ -307,8 +276,8 @@ tree *make_tree(vector truths, vector guesses, int depth, int n, int hard, map *
             guess = index_of(start);
             n = 1;
         }
-        vector *splits = split(truths, guess);
-        vector *next_guesses = 0;
+        vector **splits = split(truths, guess);
+        vector **next_guesses = 0;
         if (hard){
             next_guesses = split(guesses, guess);
         }
@@ -319,9 +288,9 @@ tree *make_tree(vector truths, vector guesses, int depth, int n, int hard, map *
         trees[i]->index = guess;
 
         for (j = 0; j < ipow(3, WSIZE); ++j){
-            if(splits[j].data){
-                if (*splits[j].size == 1){
-                    size_t index = (size_t) splits[j].data[0][0];
+            if(splits[j]){
+                if (splits[j]->size == 1){
+                    size_t index = (size_t) splits[j]->data[0];
                     if(index == guess){
                         trees[i]->leaf = 1;
                         trees[i]->count_sum += 1;
@@ -385,13 +354,13 @@ tree *make_tree(vector truths, vector guesses, int depth, int n, int hard, map *
     return t;
 }
 
-void print_split(vector *splits)
+void print_split(vector **splits)
 {
     size_t i, j;
     for(i = 0; i < ipow(3, WSIZE); ++i){
-        if (!splits[i].data) continue;
-        for(j = 0; j < *splits[i].size; ++j){
-            printf("%s,", decode((size_t) splits[i].data[0][j]));
+        if (!splits[i]) continue;
+        for(j = 0; j < splits[i]->size; ++j){
+            printf("%s,", decode((size_t) splits[i]->data[j]));
         }
         printf("\n");
     }
@@ -405,15 +374,15 @@ void print_tree(tree *t, char *buff)
     char b2[1024] = {0};
     sprintf(b2, "%s%s%s", buff, strlen(buff)?",":"", w);
 
-    if (t->children.data){
-        for(i = 0; i < t->children.size[0]; ++i){
-            print_tree((tree *)t->children.data[0][i], b2);
+    if (t->children){
+        for(i = 0; i < t->children->size; ++i){
+            print_tree((tree *)t->children->data[i], b2);
         }
     }
 
-    if (t->leaves.data){
-        for(i = 0; i < t->leaves.size[0]; ++i){
-            char *l = decode((size_t) t->leaves.data[0][i]);
+    if (t->leaves){
+        for(i = 0; i < t->leaves->size; ++i){
+            char *l = decode((size_t) t->leaves->data[i]);
             printf("%s,%s\n", b2, l);
         }
     }
@@ -443,7 +412,7 @@ int main()
 {
     read_data();
     fill_scores();
-    vector word_indexes = make_vector(NWORDS);
+    vector *word_indexes = make_vector(NWORDS);
     size_t i, j;
     for(i = 0; i < NWORDS; ++i){
         for(j = 0; j < NALL; ++j){
@@ -453,12 +422,12 @@ int main()
         }
     }
     //fill_scores_partial(word_indexes);
-    vector all_indexes = make_vector(NALL);
+    vector *all_indexes = make_vector(NALL);
     for(j = 0; j < NALL; ++j){
         append_vector(all_indexes, (void*) j);
     }
 
-    printf("%ld %ld\n", *word_indexes.size, *word_indexes.capacity);
+    printf("%ld %ld\n", word_indexes->size, word_indexes->capacity);
 
     if(0){
         printf("%d\n", score_guess("words", "words"));
