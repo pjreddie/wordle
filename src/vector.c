@@ -26,11 +26,25 @@ vector make_vector(size_t capacity)
 
 vector copy_vector(vector v)
 {
-    vector c = make_vector(*v.size);
+    vector c = make_vector(*v.size + 1);
     *c.size = *v.size;
     int i;
     for(i = 0; i < *v.size; ++i){
         c.data[0][i] = v.data[0][i];
+    }
+    return c;
+}
+
+vector concat_vectors(vector a, vector b)
+{
+    int i;
+    vector c = make_vector(*a.size + *b.size + 1);
+    *c.size = *a.size + *b.size;
+    for(i = 0; i < *a.size; ++i){
+        c.data[0][i] = a.data[0][i];
+    }
+    for(i = 0; i < *b.size; ++i){
+        c.data[0][*a.size + i] = b.data[0][i];
     }
     return c;
 }

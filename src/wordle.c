@@ -94,6 +94,7 @@ void fill_scores_partial(vector v)
 
 void free_splits(vector *splits)
 {
+    if(!splits) return;
     size_t i;
     for(i = 0; i < ipow(3, WSIZE); ++i){
         if(splits[i].data) free_vector(splits[i]);
@@ -121,6 +122,28 @@ char *decode(size_t i)
     return ALL[i];
 }
 
+float avg_split_size(vector truths, size_t guess)
+{
+    int *counts = calloc(ipow(3, WSIZE), sizeof(int));
+    int i;
+    int sum = 0;
+    int total = 0;
+    for(i = 0; i < *truths.size; ++i){
+        size_t truth = (size_t) truths.data[0][i];
+        ++counts[SCORES[guess][truth]];
+    }
+    for(i = 0; i < ipow(3, WSIZE); ++i){
+        if(counts[i]){
+            sum += counts[i];
+            total += 1;
+        }
+    }
+    if(counts[ipow(3, WSIZE)-1]) sum -= 1;
+    free(counts);
+    return 1.0 * sum / total;
+}
+
+/*
 float avg_split_size(vector *splits)
 {
     double sum = 0;
@@ -149,6 +172,7 @@ float avg_split_size(vector *splits)
     }
     return sum / n;
 }
+*/
 
 
 typedef struct{
@@ -171,9 +195,7 @@ score_pair *best_splits(vector truths, vector guesses)
     if(STOPEARLY && *truths.size < 13){
         for(i = 0; i < *truths.size; ++i){
             size_t guess = (size_t) truths.data[0][i];
-            vector *splits = split(truths, guess);
-            float avg = avg_split_size(splits);
-            free_splits(splits);
+            float avg = avg_split_size(truths, guess);
             if (avg < 1) {
                 scores[0].score = avg;
                 scores[0].index = guess;
@@ -183,9 +205,7 @@ score_pair *best_splits(vector truths, vector guesses)
     }
     for(i = 0; i < *guesses.size; ++i){
         size_t guess = (size_t) guesses.data[0][i];
-        vector *splits = split(truths, guess);
-        float avg = avg_split_size(splits);
-        free_splits(splits);
+        float avg = avg_split_size(truths, guess);
 
         scores[i].score = avg;
         scores[i].index = guess;
@@ -205,6 +225,7 @@ typedef struct{
     vector leaves;
     int depth_sum;
     int count_sum;
+    int max_depth;
 } tree;
 
 void free_tree(tree *t)
@@ -220,6 +241,14 @@ void free_tree(tree *t)
         free_vector(t->leaves);
     }
     free(t);
+}
+
+size_t index_of(char *s)
+{
+    size_t i;
+    for(i = 0; i < NALL; ++i){
+        if(0 == strcmp(s, ALL[i])) return i;
+    }
 }
 
 void free_tree_shallow(tree *t)
@@ -238,38 +267,34 @@ typedef struct {
     int depths;
 } depth_counts;
 
-/*
-depth_counts depth_counts_tree(tree *t, int depth, size_t prev)
+tree *make_tree(vector truths, vector guesses, int depth, int n, int hard, map *memo, int depth_cutoff, char *start)
 {
-    depth_counts c = {0};
-    if(!t->children.data){
-        c.n = 1;
-        c.depths = depth+1;
-        if(prev == t->index) c.depths = depth;
-        //if(c.depths > 6) c.depths = 10000;
+    int n_orig = n;
+    vector key;
+    if (hard){
+        key = concat_vectors(truths, guesses);
     } else {
-        int i;
-        for(i = 0; i < t->children.size[0]; ++i){
-            depth_counts sub = depth_counts_tree((tree *) t->children.data[0][i], depth + 1, t->index);
-            c.n += sub.n;
-            c.depths += sub.depths;
+        key = copy_vector(truths);
+    }
+    tree *cache = get_map(memo, key, 0);
+    if (cache != 0){
+        if (depth_cutoff && depth + cache->max_depth > depth_cutoff) {
+            // cache miss
+            int needed = depth;
+            append_vector(key, (void *) (size_t) -needed);
+            tree *cache2 = get_map(memo, key, 0);
+            if (cache2){
+                free_vector(key);
+                return cache2;
+            } else {
+                --key.size[0];
+            }
+        }else{
+            free_vector(key);
+            return cache;
         }
     }
-    return c;
-}
-float avg_depth_tree(tree *t)
-{
-    depth_counts c = depth_counts_tree(t, 0, -1);
-    return 1.0 * c.depths / c.n;
-}
-*/
 
-tree *make_tree(vector truths, vector guesses, int depth, int n, int hard, map *memo)
-{
-    tree *cache = get_map(memo, truths, 0);
-    if (cache != 0){
-        return cache;
-    }
     if (*guesses.size < n) n = *guesses.size;
     score_pair *scores = best_splits(truths, guesses);
     if (STOPEARLY && scores[0].score < 1) n = 1;
@@ -278,7 +303,15 @@ tree *make_tree(vector truths, vector guesses, int depth, int n, int hard, map *
     int i, j;
     for(i = 0; i < n; ++i){
         size_t guess = scores[i].index;
+        if(depth == 0 && start){
+            guess = index_of(start);
+            n = 1;
+        }
         vector *splits = split(truths, guess);
+        vector *next_guesses = 0;
+        if (hard){
+            next_guesses = split(guesses, guess);
+        }
 
         trees[i] = calloc(1, sizeof(tree));
         trees[i]->children = make_vector(0);
@@ -293,25 +326,38 @@ tree *make_tree(vector truths, vector guesses, int depth, int n, int hard, map *
                         trees[i]->leaf = 1;
                         trees[i]->count_sum += 1;
                         trees[i]->depth_sum += 1;
+                        if (1 > trees[i]->max_depth) trees[i]->max_depth = 1;
                     } else {
                         append_vector(trees[i]->leaves, (void *)index);
                         trees[i]->count_sum += 1;
                         trees[i]->depth_sum += 2;
+                        if (2 > trees[i]->max_depth) trees[i]->max_depth = 2;
                     }
                 } else {
-                    tree *child = make_tree(splits[j], hard ? splits[j] : guesses, depth+1, n, hard, memo);
+                    tree *child = make_tree(splits[j], hard ? next_guesses[j] : guesses, depth+1, n_orig, hard, memo, depth_cutoff, start);
                     append_vector(trees[i]->children, child);
                     trees[i]->count_sum += child->count_sum;
                     trees[i]->depth_sum += child->count_sum + child->depth_sum;
+                    if((child->max_depth + 1) > trees[i]->max_depth) {
+                        trees[i]->max_depth = child->max_depth + 1;
+                        if (depth == 0) {
+                            //printf("hey %s %d %d\n", decode(guess), child->max_depth, trees[i]->max_depth);
+                        }
+                        if(depth_cutoff && trees[i]->max_depth + depth > depth_cutoff) break;
+                    }
                 }
             }
         }
         free_splits(splits);
+        free_splits(next_guesses);
     }
 
     float best = 1.0 * trees[0]->depth_sum / trees[0]->count_sum;
+    if (depth_cutoff && trees[0]->max_depth + depth > depth_cutoff) best += 1000;
     for(i = 1; i < n; ++i){
         float avg = 1.0 * trees[i]->depth_sum / trees[i]->count_sum;
+        if (depth_cutoff && trees[i]->max_depth + depth > depth_cutoff) avg += 1000;
+        if(depth == 0) printf("%s %f %d\n", decode(trees[i]->index), avg, trees[i]->max_depth);
         if(avg < best){
             best = avg;
             tree *swap = trees[0];
@@ -323,9 +369,19 @@ tree *make_tree(vector truths, vector guesses, int depth, int n, int hard, map *
     for(i = 1; i < n; ++i){
         free_tree_shallow(trees[i]);
     }
-    set_map(memo, truths, t);
+    if(cache && t->max_depth < cache->max_depth){
+        //printf("curr: %d, cache: %d, found: %d\n", depth, cache->max_depth, t->max_depth);
+        append_vector(key, (void *) (size_t) -depth);
+        set_map(memo, key, t);
+    }
+    if(!cache) {
+        if(!depth_cutoff || t->max_depth + depth <= depth_cutoff){
+            set_map(memo, key, t);
+        }
+    }
     free(trees);
     free(scores);
+    free_vector(key);
     return t;
 }
 
@@ -422,9 +478,10 @@ int main()
     printf("%d\n", SCORES[0][0]);
 
     map *memo = make_map();
-    tree *t =  make_tree(word_indexes, all_indexes, 0, 8, 0, memo);
+    //tree *t =  make_tree(word_indexes, all_indexes, 0, 50, 1, memo, 6, "salet");
+    tree *t =  make_tree(word_indexes, all_indexes, 0, 8, 0, memo, 6, 0);
     print_tree(t, "");
-    printf("%d %d %f\n", t->depth_sum, t->count_sum, 1.0*t->depth_sum / t->count_sum);
+    printf("%d %d %d %f\n", t->depth_sum, t->count_sum, t->max_depth, 1.0*t->depth_sum / t->count_sum);
     free_memo(memo);
     free_vector(word_indexes);
     free_vector(all_indexes);
