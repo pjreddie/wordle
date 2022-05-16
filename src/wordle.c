@@ -3,34 +3,27 @@
 #include <string.h>
 #include <stdlib.h>
 #include <math.h>
-#include "vector.h"
-#include "map.h"
+#include "jcr.h"
 
 #define WSIZE 5
 #define NWORDS 2315
 #define NALL 12972
 #define STOPEARLY 1
 
-char WORDS[NWORDS][WSIZE + 1];
-char ALL[NALL][WSIZE + 1];
-uint8_t SCORES[NALL][NALL];
+vector *TRUTHS = 0;
+vector *GUESSES = 0;
+uint8_t *SCORES = 0;
 
-void read_data()
+vector *read_word_file(char *f)
 {
-    FILE *fp = fopen("words.txt", "r");
-    int i;
-    for(i = 0; i < NWORDS; ++i){
-        fgets(WORDS[i], 7, fp);
-        WORDS[i][WSIZE] = 0;
+    FILE *fp = fopen(f, "r");
+    char *word = 0;
+    vector *v = make_vector(0);
+    while((word = fgetl(fp))){
+        append_vector(v, word);
     }
     fclose(fp);
-
-    fp = fopen("all.txt", "r");
-    for(i = 0; i < NALL; ++i){
-        fgets(ALL[i], 7, fp);
-        ALL[i][5] = 0;
-    }
-    fclose(fp);
+    return v;
 }
 
 static inline int ipow(double a, double b)
@@ -38,7 +31,7 @@ static inline int ipow(double a, double b)
     return ((int) (pow(a, b) + 1e-8));
 }
 
-uint8_t score_guess(char *guess_, char *truth_)
+int score_guess(char *guess_, char *truth_)
 {
     char truth[WSIZE];
     char guess[WSIZE];
@@ -66,30 +59,26 @@ uint8_t score_guess(char *guess_, char *truth_)
         }
     }
 
-    return (uint8_t) score;
+    return score;
 }
 
-void fill_scores()
+void fill_scores(vector *guesses, vector *truths)
 {
     int i, j;
-    for(i = 0; i < NALL; ++i){
-        for(j = 0; j < NALL; ++j){
-            SCORES[i][j] = score_guess(ALL[i], ALL[j]);
+    int n = guesses->size;
+    SCORES = calloc(n*n, sizeof(uint8_t));
+    for(i = 0; i < guesses->size; ++i){
+        for(j = 0; j < truths->size; ++j){
+            size_t gi = (size_t) guesses->data[i];
+            size_t tj = (size_t) truths->data[j];
+            SCORES[gi*n + tj] =  score_guess(GUESSES->data[gi], GUESSES->data[tj]);
         }
     }
 }
 
-void fill_scores_partial(vector *v)
+static inline uint8_t get_score(size_t guess, size_t truth)
 {
-    int i, j;
-    for(i = 0; i < v->size; ++i){
-        for(j = 0; j < v->size; ++j){
-            size_t i1, j1;
-            i1 = (size_t) v->data[i];
-            j1 = (size_t) v->data[j];
-            SCORES[i1][j1] = score_guess(ALL[i1], ALL[j1]);
-        }
-    }
+    return SCORES[guess*GUESSES->size + truth];
 }
 
 void free_splits(vector **splits)
@@ -109,8 +98,7 @@ vector **split(vector *truths, size_t guess)
     size_t i;
     for(i = 0; i < truths->size; ++i){
         size_t truth = (size_t) get_vector(truths, i);
-        uint8_t score = SCORES[guess][truth];
-        //uint8_t score = score_guess(WORDS[guess], WORDS[truth]);
+        uint8_t score = get_score(guess,truth);
         if (!splits[score]) splits[score] = make_vector(0);
         append_vector(splits[score], (void*) truth);
     }
@@ -119,7 +107,7 @@ vector **split(vector *truths, size_t guess)
 
 char *decode(size_t i)
 {
-    return ALL[i];
+    return GUESSES->data[i];
 }
 
 float avg_split_size(vector *truths, size_t guess)
@@ -130,7 +118,7 @@ float avg_split_size(vector *truths, size_t guess)
     int total = 0;
     for(i = 0; i < truths->size; ++i){
         size_t truth = (size_t) truths->data[i];
-        ++counts[SCORES[guess][truth]];
+        ++counts[get_score(guess, truth)];
     }
     for(i = 0; i < ipow(3, WSIZE); ++i){
         if(counts[i]){
@@ -195,6 +183,7 @@ typedef struct{
     int depth_sum;
     int count_sum;
     int max_depth;
+    int optimal;
 } tree;
 
 void free_tree(tree *t)
@@ -216,8 +205,9 @@ size_t index_of(char *s)
 {
     size_t i;
     for(i = 0; i < NALL; ++i){
-        if(0 == strcmp(s, ALL[i])) return i;
+        if(0 == strcmp(s, GUESSES->data[i])) return i;
     }
+    return 0;
 }
 
 void free_tree_shallow(tree *t)
@@ -235,6 +225,47 @@ typedef struct {
     int n;
     int depths;
 } depth_counts;
+
+tree *make_leaves(vector *truths, size_t guess)
+{
+    tree *t = calloc(1, sizeof(tree));
+    t->leaves = make_vector(truths->size);
+    t->optimal = 1;
+    t->index = guess;
+    t->depth_sum = 2*truths->size;
+    t->count_sum = 1*truths->size;
+    t->max_depth = 2;
+    int i;
+    for(i = 0; i < truths->size; ++i){
+        if((size_t) truths->data[i] == guess){
+            t->leaf = 1;
+            t->depth_sum -= 1;
+        } else {
+            append_vector(t->leaves, truths->data[i]);
+        }
+    }
+    return t;
+}
+
+tree *optimal_tree(vector *truths, vector *guesses, int depth, int n, int hard, map *memo, int depth_cutoff, char *start)
+{
+    int i = 0;
+    for(i = 0; i < truths->size; ++i){
+        size_t guess = (size_t) truths->data[i];
+        float avg = avg_split_size(truths, guess);
+        if (avg < 1) {
+            return make_leaves(truths, guess);
+        }
+    }
+    for(i = 0; i < guesses->size; ++i){
+        size_t guess = (size_t) guesses->data[i];
+        float avg = avg_split_size(truths, guess);
+        if (avg == 1) {
+            return make_leaves(truths, guess);
+        }
+    }
+    return 0;
+}
 
 tree *make_tree(vector *truths, vector *guesses, int depth, int n, int hard, map *memo, int depth_cutoff, char *start)
 {
@@ -395,7 +426,7 @@ void print_tree(tree *t, char *buff)
 void free_memo(map *m)
 {
     int i;
-    for(i = 0; i < m->size; ++i){
+    for(i = 0; i < m->capacity; ++i){
         list *l = m->data[i];
         if(l){
             node *n = l->front;
@@ -408,26 +439,41 @@ void free_memo(map *m)
     }
 }
 
-int main()
+int main(int argc, char **argv)
 {
-    read_data();
-    fill_scores();
-    vector *word_indexes = make_vector(NWORDS);
+    char *guess_f = find_char_arg(argc, argv, "-g", "all.txt");
+    char *truth_f = find_char_arg(argc, argv, "-t", "words.txt");
+    int hard = find_arg(argc, argv, "-h");
+    int width = find_int_arg(argc, argv, "-w", 8);
+    int depth = find_int_arg(argc, argv, "-d", 6);
+    char *start = find_char_arg(argc, argv, "-s", 0);
+
+    GUESSES = read_word_file(guess_f);
+    TRUTHS  = read_word_file(truth_f);
+
+    double time = now();
+    vector *truth_indexes = make_vector(TRUTHS->size);
     size_t i, j;
-    for(i = 0; i < NWORDS; ++i){
-        for(j = 0; j < NALL; ++j){
-            if (0 == strncmp(WORDS[i], ALL[j], 5)){
-                append_vector(word_indexes, (void*) j);
+    j = 0;
+    for(i = 0; i < TRUTHS->size; ++i){
+        for(; j < GUESSES->size; ++j){
+            if (0 == strncmp(TRUTHS->data[i], GUESSES->data[j], WSIZE)){
+                append_vector(truth_indexes, (void*) j);
+                break;
             }
         }
     }
-    //fill_scores_partial(word_indexes);
-    vector *all_indexes = make_vector(NALL);
-    for(j = 0; j < NALL; ++j){
-        append_vector(all_indexes, (void*) j);
+    printf("truth_indexes filled %f sec\n", now() - time);
+
+    vector *guess_indexes = make_vector(GUESSES->size);
+    for(j = 0; j < GUESSES->size; ++j){
+        append_vector(guess_indexes, (void*) j);
     }
 
-    printf("%ld %ld\n", word_indexes->size, word_indexes->capacity);
+    fill_scores(guess_indexes, hard ? guess_indexes : truth_indexes);
+
+
+    printf("%ld %ld\n", truth_indexes->size, truth_indexes->capacity);
 
     if(0){
         printf("%d\n", score_guess("words", "words"));
@@ -437,22 +483,20 @@ int main()
     //print_split(splits);
 
     if (0){
-        score_pair *scores = best_splits(word_indexes, all_indexes);
+        score_pair *scores = best_splits(truth_indexes, guess_indexes);
         for(i = 0; i < 40; ++i){
             printf("%f %s\n", scores[i].score, decode(scores[i].index));
         }
         return 0;
     }
 
-    printf("%d\n", SCORES[0][0]);
 
     map *memo = make_map();
-    //tree *t =  make_tree(word_indexes, all_indexes, 0, 50, 1, memo, 6, "salet");
-    tree *t =  make_tree(word_indexes, all_indexes, 0, 8, 0, memo, 6, 0);
+    tree *t =  make_tree(truth_indexes, guess_indexes, 0, width, hard, memo, depth, start);
     print_tree(t, "");
     printf("%d %d %d %f\n", t->depth_sum, t->count_sum, t->max_depth, 1.0*t->depth_sum / t->count_sum);
     free_memo(memo);
-    free_vector(word_indexes);
-    free_vector(all_indexes);
+    free_vector(truth_indexes);
+    free_vector(guess_indexes);
     free_map(memo);
 }
